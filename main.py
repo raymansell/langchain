@@ -1,3 +1,5 @@
+from typing import List
+
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import tool
@@ -5,12 +7,30 @@ from langchain_core.messages import \
     HumanMessage  # input for the agent's execution
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
+
+class Source(BaseModel):
+    """Schema for a source used by the agent"""
+
+    url: str = Field(description="The URL of the source")
+
+
+class AgentResponse(BaseModel):
+    """Schema for agent response with answer and sources"""
+
+    answer: str = Field(description="Thr agent's answer to the query")
+    sources: List[Source] = Field(
+        default_factory=list, description="List of sources used to generate the answer"
+    )
+
+
 llm = ChatOpenAI()
 tools = [TavilySearch()]
-agent = create_agent(model=llm, tools=tools)
+# response_format will structure the response as a pydantic model and return it in `structured_response` key of the agent's state
+agent = create_agent(model=llm, tools=tools, response_format=AgentResponse)
 
 
 def main():
