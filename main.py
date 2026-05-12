@@ -1,8 +1,11 @@
 import os
+from operator import itemgetter
 
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage
+from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 
@@ -62,6 +65,43 @@ def retrieval_chain_without_lcel(query: str):
     return response.content
 
 
+# ============================================================================
+# IMPLEMENTATION 2: With LCEL (LangChain Expression Language) - BETTER APPROACH
+# ============================================================================
+def create_retrieval_chain_with_lcel():
+    """
+    Create a retrieval chain using LCEL (LangChain Expression Language).
+    Returns a chain that can be invoked with {"question": "..."}
+
+    Advantages over non-LCEL approach:
+    - Declarative and composable: Easy to chain operations with pipe operator (|)
+    - Built-in streaming: chain.stream() works out of the box
+    - Built-in async: chain.ainvoke() and chain.astream() available
+    - Batch processing: chain.batch() for multiple inputs
+    - Type safety: Better integration with LangChain's type system
+    - Less code: More concise and readable
+    - Reusable: Chain can be saved, shared, and composed with other chains
+    - Better debugging: LangChain provides better observability tools
+    """
+    # udemy.com/course/langchain/learn/lecture/53903093
+    retrieval_chain = (
+        # at this point we have access to the  `{"question": "..."}` dict which was passed via the invoke method
+        
+        # this will return a merged dict `{"question": "...", "context": "computed via LCEL composition"}` (https://reference.langchain.com/python/langchain-core/runnables/passthrough/RunnablePassthrough)
+        RunnablePassthrough.assign(
+            # (note that neither `itemgetter("question")` nor `format_docs` are runnable, but when using the | operator langchain automatically wraps them as RunnableLambdas)
+            context=itemgetter("question") | retriever | format_docs # steps 1 and 2
+        ) # step 3 (injecting the `{"question": "...", "context": "computed via LCEL composition"}` dict into the prompt_template) 
+        | prompt_template 
+        | llm # step 4
+        | StrOutputParser() # step 5
+    )
+    return retrieval_chain
+    # recall we will be invoking this chain later with .invoke({"question": "..."})
+    # that is how the `retrieval_chain` can access the `{"question": "..."}` dictionary
+    # as an ""argument"" to the first step (RunnablePassthrough)
+
+
 if __name__ == "__main__":
     print("Retrieving...")
 
@@ -87,3 +127,34 @@ if __name__ == "__main__":
     result_without_lcel = retrieval_chain_without_lcel(query)
     print("\nAnswer:")
     print(result_without_lcel)
+
+    # ========================================================================
+    # Option 2: Use implementation WITH LCEL (Better Approach)
+    # ========================================================================
+    print("\n" + "=" * 70)
+    print("IMPLEMENTATION 2: With LCEL - Better Approach")
+    print("=" * 70)
+    print("Why LCEL is better:")
+    print("- More concise and declarative")
+    print("- Built-in streaming: chain.stream()")
+    print("- Built-in async: chain.ainvoke()")
+    print("- Easy to compose with other chains")
+    print("- Better for production use")
+    print("=" * 70)
+
+    chain_with_lcel = create_retrieval_chain_with_lcel()
+    result_with_lcel = chain_with_lcel.invoke({"question": query})
+    print("\nAnswer:")
+    print(result_with_lcel)
+
+
+# glossary:
+#  from operator import itemgetter
+#   
+#  person = {"name": "Ray", "age": 28, "city": "San Francisco"}
+#
+#  get_name = itemgetter("name")
+#  get_name(person) # Returns "Ray"
+#   
+#  get_name_and_city = itemgetter("name", "city")
+#  get_name_and_city(person) # Returns: ("Ray", "San Francisco") 
